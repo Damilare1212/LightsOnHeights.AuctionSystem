@@ -1,0 +1,6 @@
+@Auction.RoomService_HostAddress = http://localhost:5033
+
+GET {{Auction.RoomService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

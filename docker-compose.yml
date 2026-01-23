@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  payment-gateway:
+    build:
+      context: ./src/Payment.GatewayMock
+    ports:
+      - "5100:80"
+
+  roomservice:
+    build:
+      context: ./src/Auction.RoomService
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    ports:
+      - "5001:80"
+
+  biddingservice:
+    build:
+      context: ./src/Auction.BiddingService
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    ports:
+      - "5002:80"
+    volumes:
+      - bidding-data:/data
+
+  notificationservice:
+    build:
+      context: ./src/Auction.NotificationService
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    ports:
+      - "5003:80"
+    volumes:
+      - notification-data:/data
+
+  invoiceservice:
+    build:
+      context: ./src/Auction.InvoiceService
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    ports:
+      - "5004:80"
+    volumes:
+      - invoice-data:/data
+
+  paymentservice:
+    build:
+      context: ./src/Auction.PaymentService
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - PAYMENT_GATEWAY_URL=http://payment-gateway
+    depends_on:
+      - rabbitmq
+      - payment-gateway
+    ports:
+      - "5005:80"
+    volumes:
+      - payment-data:/data
+
+volumes:
+  sqlite-data:
+    driver: local
+  bidding-data:
+    driver: local
+  notification-data:
+    driver: local
+  invoice-data:
+    driver: local
+  payment-data:
+    driver: local
