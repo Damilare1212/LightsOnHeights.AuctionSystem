@@ -44,18 +44,33 @@ public class NotificationManager
         var clients = GetSubscribers().ToList();
         if (!clients.Any()) return;
 
-        var client = _httpClientFactory.CreateClient();
         foreach (var url in clients)
         {
             try
             {
+                using var client = _httpClientFactory.CreateClient();
+                client.Timeout = TimeSpan.FromSeconds(5); // Add timeout to prevent hanging
+                
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                
                 // Send a simple POST with JSON body { auctionId, event }
                 var payload = new { AuctionId = auctionId, Event = evt };
-                await client.PostAsJsonAsync(url, payload);
+                await client.PostAsJsonAsync(url, payload, cts.Token);
             }
-            catch
+            catch (TaskCanceledException ex) when (ex.CancellationToken == cts.Token)
             {
-                
+                // Timeout - log but continue with other subscribers
+                Console.WriteLine($"Notification to {url} timed out");
+            }
+            catch (HttpRequestException ex)
+            {
+                // HTTP error - log but continue with other subscribers
+                Console.WriteLine($"HTTP error notifying {url}: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                // Generic error - log but continue with other subscribers
+                Console.WriteLine($"Failed to notify {url}: {ex.Message}");
             }
         }
     }

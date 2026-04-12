@@ -23,6 +23,11 @@ public class EfInvoiceRepository : IInvoiceRepository
         return await _db.Invoices.FindAsync(invoiceId);
     }
 
+    public async Task<InvoiceEntity?> GetByAuctionIdAsync(Guid auctionId)
+    {
+        return await _db.Invoices.FirstOrDefaultAsync(i => i.AuctionId == auctionId);
+    }
+
     public async Task<IEnumerable<InvoiceEntity>> GetAllAsync()
     {
         return await _db.Invoices.ToListAsync();

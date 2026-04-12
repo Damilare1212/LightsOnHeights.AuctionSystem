@@ -22,8 +22,23 @@ public class RoomsController : ControllerBase
     [HttpPost("{roomId:guid}/auctions")]
     public async Task<IActionResult> StartAuction(Guid roomId, [FromBody] StartAuctionRequest request)
     {
+        var now = DateTimeOffset.UtcNow;
+        
+        // Validate end time is in the future
+        if (request.EndTime <= now)
+        {
+            return BadRequest(new { error = "End time must be in the future" });
+        }
+
+        // Validate minimum auction duration (e.g., at least 10 seconds)
+        var minDuration = TimeSpan.FromSeconds(10);
+        if (request.EndTime - now < minDuration)
+        {
+            return BadRequest(new { error = $"Auction must run for at least {minDuration.TotalSeconds} seconds" });
+        }
+
         var auctionId = Guid.NewGuid();
-        var startTime = DateTimeOffset.UtcNow;
+        var startTime = now;
 
         var msg = new AuctionStarted(auctionId, roomId, request.ItemId, startTime, request.EndTime);
         _manager.AddAuction(roomId, auctionId);

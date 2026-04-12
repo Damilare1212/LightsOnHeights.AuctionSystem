@@ -6,6 +6,7 @@ public interface IInvoiceRepository
 {
     Task AddAsync(InvoiceEntity invoice);
     Task<InvoiceEntity?> GetAsync(Guid invoiceId);
+    Task<InvoiceEntity?> GetByAuctionIdAsync(Guid auctionId);
     Task<IEnumerable<InvoiceEntity>> GetAllAsync();
     Task MarkPaidAsync(Guid invoiceId);
 }

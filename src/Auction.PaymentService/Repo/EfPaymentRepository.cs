@@ -42,6 +42,11 @@ public class EfPaymentRepository : IPaymentRepository
         return await _db.Payments.FindAsync(id);
     }
 
+    public async Task<PaymentRecord?> GetByInvoiceIdAsync(Guid invoiceId)
+    {
+        return await _db.Payments.FirstOrDefaultAsync(p => p.InvoiceId == invoiceId);
+    }
+
     public async Task<IEnumerable<PaymentRecord>> GetAllAsync()
     {
         return await _db.Payments.ToListAsync();
