@@ -19,6 +19,20 @@ public class AuctionEndedConsumer : IConsumer<AuctionEnded>
     {
         var msg = context.Message;
 
+        // Don't create invoice if there's no winner (no bids were placed)
+        if (msg.WinnerId == Guid.Empty || msg.WinningAmount <= 0)
+        {
+            return; // No winner, no invoice needed
+        }
+
+        // Check for idempotency - skip if invoice already exists for this auction
+        var existingInvoice = await _repo.GetByAuctionIdAsync(msg.AuctionId);
+        if (existingInvoice != null)
+        {
+            // Already processed, skip to prevent duplicate invoices
+            return;
+        }
+
         var entity = new Auction.InvoiceService.Repo.InvoiceEntity
         {
             InvoiceId = Guid.NewGuid(),

@@ -23,28 +23,43 @@ public class BidsController : ControllerBase
     }
 
     [HttpPost("{auctionId:guid}")]
-    public async Task<IActionResult> PlaceBid (Guid auctionId, [FromBody] BidRequest request)
+    public async Task<IActionResult> PlaceBid(Guid auctionId, [FromBody] BidRequest request)
     {
-        if (!_manager.IsActive(auctionId))
-            return BadRequest(new { error = "Auction is not active or does not exist." });
+        // Validate input
+        if (request.Amount <= 0)
+            return BadRequest(new { error = "Bid amount must be greater than 0" });
 
         var bidId = Guid.NewGuid();
         var timestamp = DateTimeOffset.UtcNow;
 
+        // Atomically check and update - prevents race conditions
+        var result = _manager.TryPlaceBid(auctionId, bidId, request.BidderId, request.Amount, timestamp);
+        
+        if (!result.Success)
+            return BadRequest(new { error = result.ErrorMessage });
+
+        // Publish BidPlaced event for all bids
         var bidPlaced = new BidPlaced(auctionId, bidId, request.BidderId, request.Amount, timestamp);
         await _publisher.Publish(bidPlaced);
 
-        // persist
-        var entity = new BidEntity { BidId = bidId, AuctionId = auctionId, BidderId = request.BidderId, Amount = request.Amount, Timestamp = timestamp };
+        // Persist bid to database
+        var entity = new BidEntity 
+        { 
+            BidId = bidId, 
+            AuctionId = auctionId, 
+            BidderId = request.BidderId, 
+            Amount = request.Amount, 
+            Timestamp = timestamp 
+        };
         await _repo.AddAsync(entity);
 
-        var highestUpdated = _manager.TryUpdateHighestBid(auctionId, bidId, request.BidderId, request.Amount, timestamp);
-        if (highestUpdated != null)
+        // Publish HighestBidUpdated only if this is a new highest bid
+        if (result.IsNewHighest && result.UpdateEvent != null)
         {
-            await _publisher.Publish(highestUpdated);
+            await _publisher.Publish(result.UpdateEvent);
         }
 
-        return Accepted($"/api/bids/{auctionId}/{bidId}", new { bidId });
+        return Accepted($"/api/bids/{auctionId}/{bidId}", new { bidId, result.IsNewHighest });
     }
 
     [HttpGet("{auctionId:guid}/highest")]
