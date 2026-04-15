@@ -28,4 +28,9 @@ public class EfBidRepository : IBidRepository
     {
         return await _db.Bids.Where(b => b.AuctionId == auctionId).OrderByDescending(b => b.Amount).FirstOrDefaultAsync();
     }
+
+    public async Task<IEnumerable<BidEntity>> GetAllAsync()
+    {
+        return await _db.Bids.ToListAsync();
+    }
 }

@@ -3,6 +3,7 @@ using Auction.RoomService.Models;
 using Auction.RoomService.Services;
 using Auction.Shared;
 using MassTransit;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Auction.RoomService.Controllers;
 
@@ -20,6 +21,7 @@ public class RoomsController : ControllerBase
     }
 
     [HttpPost("{roomId:guid}/auctions")]
+    [Authorize(Policy = "Auctioneer")]
     public async Task<IActionResult> StartAuction(Guid roomId, [FromBody] StartAuctionRequest request)
     {
         var now = DateTimeOffset.UtcNow;
