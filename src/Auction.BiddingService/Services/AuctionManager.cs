@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Auction.Shared;
 using Auction.BiddingService.Models;
+using Auction.BiddingService.IRepo;
 
 namespace Auction.BiddingService.Services;
 
@@ -8,6 +9,57 @@ public class AuctionManager
 {
     private readonly ConcurrentDictionary<Guid, AuctionState> _auctions = new();
     private readonly decimal _minimumBidIncrement = 1.00m; // Configurable in production
+    private readonly ILogger<AuctionManager> _logger;
+
+    public AuctionManager(ILogger<AuctionManager> logger)
+    {
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Initialize auction state from historical bids on service startup.
+    /// This ensures state is not lost on service restart.
+    /// </summary>
+    public async Task InitializeFromHistoryAsync(IBidRepository repo)
+    {
+        try
+        {
+            var allBids = await repo.GetAllAsync();
+            var bidList = allBids.ToList();
+            
+            foreach (var bid in bidList)
+            {
+                if (!_auctions.ContainsKey(bid.AuctionId))
+                {
+                    _auctions[bid.AuctionId] = new AuctionState 
+                    { 
+                        AuctionId = bid.AuctionId,
+                        Active = true,
+                        HighestAmount = 0,
+                        HighestBidderId = Guid.Empty,
+                        UpdatedAt = bid.Timestamp
+                    };
+                }
+
+                var state = _auctions[bid.AuctionId];
+                
+                // Only update if this bid is higher than current highest
+                if (bid.Amount > state.HighestAmount)
+                {
+                    state.HighestAmount = bid.Amount;
+                    state.HighestBidderId = bid.BidderId;
+                    state.HighestBidId = bid.Id;
+                    state.UpdatedAt = bid.Timestamp;
+                }
+            }
+            
+            _logger.LogInformation("AuctionManager initialized with {Count} auctions from history", _auctions.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize AuctionManager from history");
+        }
+    }
 
     public void StartAuction(AuctionStarted msg)
     {

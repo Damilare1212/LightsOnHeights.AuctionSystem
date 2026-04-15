@@ -4,6 +4,7 @@ using Auction.BiddingService.Services;
 using Auction.Shared;
 using MassTransit;
 using Auction.BiddingService.IRepo;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Auction.BiddingService.Controllers;
 
@@ -23,6 +24,7 @@ public class BidsController : ControllerBase
     }
 
     [HttpPost("{auctionId:guid}")]
+    [Authorize(Policy = "Bidder")]
     public async Task<IActionResult> PlaceBid(Guid auctionId, [FromBody] BidRequest request)
     {
         // Validate input

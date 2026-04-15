@@ -5,6 +5,11 @@ using Auction.BiddingService.Models;
 using Auction.BiddingService.Repo;
 using Microsoft.EntityFrameworkCore;
 using Auction.BiddingService.IRepo;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using HealthChecks.RabbitMQ;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,10 +42,52 @@ if (runMode == "swagger")
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 
+// JWT Authentication
+var secretKey = builder.Configuration["Jwt:SecretKey"] ?? "SuperSecretKeyForDevelopmentOnly_12345!";
+var key = Encoding.UTF8.GetBytes(secretKey);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Bidder", policy => policy.RequireAuthenticatedUser());
+    options.AddPolicy("Auctioneer", policy => 
+        policy.RequireAuthenticatedUser()
+              .RequireClaim("role", "Auctioneer"));
+    options.AddPolicy("Admin", policy => 
+        policy.RequireAuthenticatedUser()
+              .RequireClaim("role", "Admin"));
+});
+
 if (!disablePersistence)
 {
-    // EF Core for bidding persistence
-    builder.Services.AddDbContext<BiddingDbContext>(options => options.UseSqlite(connectionString));
+    // EF Core for bidding persistence with retry logic
+    builder.Services.AddDbContext<BiddingDbContext>(options => 
+        options.UseSqlite(connectionString, sqliteOptions =>
+        {
+            sqliteOptions.MigrationsAssembly(typeof(BiddingDbContext).Assembly.FullName);
+        })
+        .EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: new[] { 1 } // SQLITE_BUSY
+        ));
     builder.Services.AddScoped<IBidRepository, EfBidRepository>();
 }
 else
@@ -76,7 +123,12 @@ if (!disableMessaging)
 
 var app = builder.Build();
 
-// Apply EF migrations if persistence enabled
+// Health checks
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<BiddingDbContext>("database")
+    .AddRabbitMQ(rabbitHost, name: "rabbitmq", timeout: TimeSpan.FromSeconds(3));
+
+// Apply EF migrations if persistence enabled and enable WAL mode
 if (!disablePersistence)
 {
     using (var scope = app.Services.CreateScope())
@@ -85,11 +137,18 @@ if (!disablePersistence)
         {
             var db = scope.ServiceProvider.GetRequiredService<BiddingDbContext>();
             db.Database.Migrate();
+            // Enable WAL mode for better concurrency
+            db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+            
+            // Initialize auction state from history
+            var manager = scope.ServiceProvider.GetRequiredService<AuctionManager>();
+            var repo = scope.ServiceProvider.GetRequiredService<IBidRepository>();
+            await manager.InitializeFromHistoryAsync(repo);
         }
         catch (Exception ex)
         {
             // Log and continue so Swagger/UI is available for testing
-            Console.WriteLine($"Warning: failed to apply migrations: {ex.Message}");
+            Console.WriteLine($"Warning: failed to apply migrations or initialize state: {ex.Message}");
         }
     }
 }
@@ -101,7 +160,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
 app.UseAuthorization();
+
+// Health check endpoints
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Name != "memory" });
+
 app.MapControllers();
 
 app.Run();
@@ -126,5 +192,10 @@ class InMemoryBidRepository : IBidRepository
     {
         var highest = _bids.Where(b => b.AuctionId == auctionId).OrderByDescending(b => b.Amount).FirstOrDefault();
         return Task.FromResult(highest);
+    }
+
+    public Task<IEnumerable<BidEntity>> GetAllAsync()
+    {
+        return Task.FromResult(_bids.AsEnumerable());
     }
 }

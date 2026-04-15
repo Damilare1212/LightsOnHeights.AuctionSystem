@@ -1,17 +1,35 @@
 ```
 # Build artifacts
-bin/
-obj/
-*.dll
+*.obj
 *.exe
+*.dll
+*.so
+*.a
+*.lib
 *.pdb
-*.config
-*.csproj.user
+*.ilk
+*.exp
+*.dSYM/
 
 # Dependencies
 packages/
 node_modules/
-lib/
+vendor/
+
+# Output directories
+bin/
+obj/
+out/
+dist/
+build/
+target/
+
+# Configuration files
+appsettings.Production.json
+*.user
+*.userosscache
+*.suo
+*.csproj.user
 
 # Logs
 *.log
@@ -19,20 +37,25 @@ lib/
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
+.vs/
 .vscode/
 .idea/
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
+*.swp
+*.swo
 
 # OS generated files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Testing
 TestResults/
+
+# Temporary files
+*.tmp
+*.temp
+*~
 ```
